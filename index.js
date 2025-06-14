@@ -14,7 +14,7 @@ app.use(express.json());
 app.use(bodyParser.json());
 
 const dbConfig = {
-    host: '192.168.137.10',
+    host: '192.168.1.128',
     user: 'lnxarchitect',
     password: 'Practica#4',
     database: 'conectatutor',
