@@ -14,7 +14,7 @@ app.use(express.json());
 app.use(bodyParser.json());
 
 const dbConfig = {
-    host: '192.168.137.10',
+    host: '192.168.1.128',
     user: 'lnxarchitect',
     password: 'Practica#4',
     database: 'conectatutor',
@@ -409,6 +409,8 @@ app.post('/baja-asesoria', async (req, res) => {
   }
 });
 
+
+//Obtiene las materias mal, pero x por el momento
 app.get('/asesorias', async (req, res) => {
   try {
     const [asesorias] = await pool.query(`
@@ -433,31 +435,96 @@ app.get('/asesorias', async (req, res) => {
 app.get('/asesorias/alumno/:id', async (req, res) => {
     const { id } = req.params;
     try {
-        const query = `
-            SELECT a.id_asesoria, a.fecha_inicio, a.fecha_fin, a.dias, a.horario_inicio, a.horario_fin, a.estado,
-                   m.nombre AS materiaNombre,
-                   u.nombre AS maestroNombre,
-                   l.nombre AS lugarNombre
-            FROM alumno_asesoria aa
-            INNER JOIN asesoria a ON aa.id_asesoria = a.id_asesoria
-            INNER JOIN materias m ON a.id_materia = m.id
-            INNER JOIN usuarios u ON a.id_maestro = u.id
-            INNER JOIN lugar l ON a.id_lugar = l.id_lugar
-            WHERE aa.id_alumno = ?
-        `;
-        const [rows] = await connection.execute(query, [id]);
+        const [asesorias] = await pool.query(`
+            SELECT 
+                a.idAsesoria AS id_asesoria,
+                a.FechaInicio AS fecha_inicio, 
+                a.FechaFin AS fecha_fin,
+                GROUP_CONCAT(d.Dia ORDER BY d.idDia SEPARATOR ', ') AS dias,
+                a.HorarioInicio AS horario_inicio, 
+                a.HorarioFin AS horario_fin
+            FROM Inscripcion i
+            JOIN Asesoria a ON a.idAsesoria = i.idAsesoria
+            JOIN Asesoria_Dias ad ON ad.IdAsesoria = a.idAsesoria
+            JOIN Dias d ON d.idDia = ad.IdDia
+            WHERE i.idAlumno = ?
+            GROUP BY 
+                a.idAsesoria
+        `, [id]);
 
-        if (rows.length === 0) {
+        if (asesorias.length === 0) {
             return res.status(404).json({ error: 'El alumno no tiene asesorías asignadas.' });
         }
 
-        res.json(rows);
+        res.json(asesorias);
+
     } catch (error) {
         console.error('Error al obtener asesorías del alumno:', error);
+        res.status(500).json({
+            error: 'Error al procesar las asesorías del alumno.',
+            detalle: error.message
+        });
+    }
+});
+
+
+
+//Falta por implementar: NoSQL para mostrar las asesorias de las materias dependiendo de la carrera del 
+//alumno
+//Esta es una "solución" temporal solo para mostrar asesorias y poder
+//Seguir con el flujo del programa 
+
+
+//Obtener asesorias
+
+
+// asesoria.materiaNombre
+// asesoria.fecha_inicio
+// asesoria.fecha_fin
+// asesoria.dias
+// asesoria.horario_inicio
+// asesoria.horario_fin
+
+
+app.get('/asesorias/:id', async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const [asesorias] = await pool.query(`
+            SELECT 
+                a.idAsesoria AS id_asesoria, 
+                a.FechaInicio AS fecha_inicio, 
+                a.FechaFin AS fecha_fin,
+                GROUP_CONCAT(d.Dia ORDER BY d.idDia SEPARATOR ', ') AS dias,
+                a.HorarioInicio AS horario_inicio, 
+                a.HorarioFin AS horario_fin,
+                a.estado
+            FROM Asesoria a
+            JOIN Asesoria_Dias ad ON ad.IdAsesoria = a.idAsesoria
+            JOIN Dias d ON d.idDia = ad.IdDia
+            WHERE a.estado = 'En curso'
+              AND a.idAsesoria NOT IN (
+                  SELECT idAsesoria FROM Inscripcion WHERE idAlumno = ?
+              )
+            GROUP BY 
+                a.idAsesoria
+        `, [id]);
+
+        if (asesorias.length === 0) {
+            return res.status(404).json({ error: 'No hay asesorías activas disponibles.' });
+        }
+
+        res.json(asesorias);
+
+    } catch (error) {
+        console.error('Error al obtener asesorías disponibles:', error);
         res.status(500).json({ error: 'Error al procesar las asesorías del alumno.', detalle: error.message });
     }
 });
 
+
+
+/*
 app.get('/asesorias/:id', async (req, res) => {
     const { id } = req.params;
 
@@ -513,6 +580,7 @@ app.get('/asesorias/:id', async (req, res) => {
         res.status(500).json({ error: 'Error al procesar las asesorías del alumno.', detalle: error.message });
     }
 });
+*/
 
 app.get('/asesoriasSolicitadas/:id', async (req, res) => {
     const { id } = req.params;
