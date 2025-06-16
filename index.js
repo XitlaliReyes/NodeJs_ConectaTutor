@@ -16,7 +16,7 @@ app.use(express.json());
 app.use(bodyParser.json());
 
 const dbConfig = {
-    host: '192.168.1.86',
+    host: '192.168.1.128',
     user: 'lnxarchitect',
     password: 'Practica#4',
     database: 'conectatutor',
@@ -658,31 +658,35 @@ app.get('/asesoriasSolicitadas/:id', async (req, res) => {
     const { id } = req.params;
 
     try {
-        const query = `
-            SELECT a.id_asesoria, a.fecha_inicio, a.fecha_fin, a.dias, a.horario_inicio, a.horario_fin, a.estado,
-                   m.nombre AS materiaNombre,
-                   u.nombre AS maestroNombre,
-                   l.nombre AS lugarNombre
-            FROM asesoria a
-            INNER JOIN materias m ON a.id_materia = m.id
-            INNER JOIN usuarios u ON a.id_maestro = u.id
-            INNER JOIN lugar l ON a.id_lugar = l.id_lugar
-            WHERE a.id_solicitante = ? AND a.estado = 'Pendiente'
-        `;
-
-        const [asesorias] = await connection.execute(query, [id]);
+        const [asesorias] = await pool.query(`
+            SELECT 
+                a.idAsesoria AS id_asesoria, 
+                a.FechaInicio AS fecha_inicio, 
+                a.FechaFin AS fecha_fin,
+                GROUP_CONCAT(d.Dia ORDER BY d.idDia SEPARATOR ', ') AS dias,
+                a.HorarioInicio AS horario_inicio, 
+                a.HorarioFin AS horario_fin,
+                a.estado
+            FROM Asesoria a
+            JOIN Asesoria_Dias ad ON ad.IdAsesoria = a.idAsesoria
+            JOIN Dias d ON d.idDia = ad.IdDia
+            WHERE a.estado = 'Pendiente'
+              AND a.idAlumno = ?
+            GROUP BY 
+                a.idAsesoria
+        `, [id]);
 
         if (asesorias.length === 0) {
-            return res.status(404).json({ error: 'No hay asesorías pendientes para el alumno.' });
+            return res.status(404).json({ error: 'No hay asesorías activas disponibles.' });
         }
 
         res.json(asesorias);
+
     } catch (error) {
-        console.error('Error al obtener asesorías solicitadas:', error);
+        console.error('Error al obtener asesorías disponibles:', error);
         res.status(500).json({ error: 'Error al procesar las asesorías del alumno.', detalle: error.message });
     }
 });
-
 
 app.post('/baja', async (req, res) => {
     const { idAsesoria, idUsuario } = req.body;
@@ -739,58 +743,53 @@ app.post('/alta', async (req, res) => {
 
 //Esto de Materia siento que va causar problemas mas adelante
 app.post('/asesoria', async (req, res) => {
-  const { dias, horario_inicio, materia, id_solicitante } = req.body;
-  if (!dias || !horario_inicio || !materia || !id_solicitante) {
+  const { dias, horario_inicio, materia, idAlumno } = req.body;
+
+  if (!dias || !horario_inicio || !materia || !idAlumno) {
     return res.status(400).json({ error: 'Datos incompletos para crear asesoría.' });
   }
 
   try {
-    // const [matRow] = await pool.execute(
-    //   'SELECT idMateria FROM Materia WHERE Nombre = ?',
-    //   [materia]
-    // );
-    // if (matRow.length === 0) {
-    //   return res.status(400).json({ error: 'La materia proporcionada no existe.' });
-    // }
-
     const horario_fin = calcularHorarioFin(horario_inicio);
-    await pool.execute(
-      `INSERT INTO Asesoria (FechaInicio, FechaFin, Dias, HorarioInicio, HorarioFin,
-        idDocente, idLugar, Estado, idSolicitante)
-       VALUES ('', '', ?, ?, ?, NULL, ?, NULL, 'Pendiente', ?)`,
-      [dias, horario_inicio, horario_fin, matRow[0].idMateria, id_solicitante]
+
+    // Insertar asesoría básica
+    const [insertResult] = await pool.execute(
+      `INSERT INTO Asesoria (
+        idDocente, idAlumno, FechaInicio, FechaFin,
+        HorarioInicio, HorarioFin, Estado, idLugar
+      ) VALUES (NULL, ?, NULL, NULL, ?, ?, 'Pendiente', NULL)`,
+      [idAlumno, horario_inicio, horario_fin]
     );
-    res.status(201).json({ message: 'Solicitud de asesoría creada.' });
+
+    const idAsesoria = insertResult.insertId;
+
+    // Obtener el idDia correspondiente a cada nombre recibido
+    for (const diaNombre of dias) {
+      const [rows] = await pool.execute(
+        'SELECT idDia FROM Dias WHERE Dia = ?',
+        [diaNombre]
+      );
+
+      if (rows.length === 0) {
+        console.warn(`Día no encontrado: ${diaNombre}`);
+        continue;
+      }
+
+      const idDia = rows[0].idDia;
+
+      await pool.execute(
+        'INSERT INTO Asesoria_Dias (idAsesoria, idDia) VALUES (?, ?)',
+        [idAsesoria, idDia]
+      );
+    }
+
+    res.status(201).json({ message: 'Solicitud de asesoría creada correctamente.', idAsesoria });
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al crear solicitud de asesoría.' });
   }
 });
-
-app.post('/crear-asesoria', async (req, res) => {
-  const { dias, horario_inicio, id_materia, id_lugar, id_maestro, fecha_inicio } = req.body;
-  if (!dias || !horario_inicio || !id_materia || !id_lugar || !id_maestro || !fecha_inicio) {
-    return res.status(400).json({ error: 'Faltan datos obligatorios para crear la asesoría.' });
-  }
-
-  try {
-    const horario_fin = calcularHorarioFin(horario_inicio);
-    const fechaFin = calcularFechaFin(fecha_inicio);
-
-    await pool.execute(
-      `INSERT INTO Asesoria (FechaInicio, FechaFin, Dias, HorarioInicio, HorarioFin,
-        idDocente, idMateria, idLugar, Estado, idSolicitante)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Activo', NULL)`,
-      [fecha_inicio, fechaFin, dias, horario_inicio, horario_fin, id_maestro, id_materia, id_lugar]
-    );
-
-    res.status(201).json({ message: 'Asesoría creada exitosamente.' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error al crear asesoría.' });
-  }
-});
-
 
 
 app.put('/asesoria', async (req, res) => {
