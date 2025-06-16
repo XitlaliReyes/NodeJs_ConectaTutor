@@ -16,7 +16,7 @@ app.use(express.json());
 app.use(bodyParser.json());
 
 const dbConfig = {
-    host: '192.168.1.128',
+    host: '192.168.1.86',
     user: 'lnxarchitect',
     password: 'Practica#4',
     database: 'conectatutor',
@@ -434,7 +434,7 @@ app.get('/asesorias', async (req, res) => {
              CONCAT(d.Nombre, ' ', d.ApellidoPaterno, ' ', d.ApellidoMaterno) AS maestroNombre,
              l.Nombre AS lugarNombre
       FROM Asesoria a
-      LEFT JOIN Materia m ON a.idAsesoria = m.idMateria -- Revisar relación real
+      LEFT JOIN Materia m ON a.idAsesoria = m.idMateria
       LEFT JOIN Docente d ON a.idDocente = d.idDocente
       LEFT JOIN Lugar l ON a.idLugar = l.idLugar
     `);
