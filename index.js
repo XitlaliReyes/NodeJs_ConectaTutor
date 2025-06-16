@@ -56,7 +56,7 @@ app.get('/usuarios', async (req, res) => {
     try {
         const connection = await mysql.createConnection(dbConfig);
         const [docentes] = await connection.execute('SELECT idDocente AS id, Nombre, "tutor" AS ocupacion, CONCAT(ApellidoPaterno, " ", ApellidoMaterno) AS apellidos, Password AS password FROM Docente');
-        const [alumnos] = await connection.execute('SELECT idAlumno AS id, Nombre, "alumno" AS ocupacion, CONCAT(ApellidoPaterno, " ", ApellidoMaterno) AS apellidos, Password AS password FROM Alumno');
+        const [alumnos] = await connection.execute('SELECT idAlumno AS id, Nombre, "alumno" AS ocupacion, CONCAT(ApellidoPaterno, " ", ApellidoMaterno) AS apellidos, Password AS password, Semestre FROM Alumno');
         await connection.end();
 
         const usuarios = [...docentes, ...alumnos];
@@ -317,16 +317,15 @@ app.post('/tutores', async (req, res) => {
 });
 
 
-
 app.get('/usr/:id', async (req, res) => {
     const { id } = req.params;
 
     try {
         // Buscar en ambas tablas
-        const [[alumno]] = await pool.query('SELECT * FROM Alumno WHERE idAlumno = ?', [id]);
+        const [[alumno]] = await pool.query('SELECT idAlumno AS id, Nombre, "alumno" AS ocupacion, CONCAT(ApellidoPaterno, " ", ApellidoMaterno) AS apellidos, Password AS password, Semestre FROM Alumno WHERE idAlumno = ?', [id]);
         if (alumno) return res.json({ ...alumno, ocupacion: 'alumno' });
 
-        const [[docente]] = await pool.query('SELECT * FROM Docente WHERE idDocente = ?', [id]);
+        const [[docente]] = await pool.query('SELECT idDocente AS id, Nombre, "tutor" AS ocupacion, CONCAT(ApellidoPaterno, " ", ApellidoMaterno) AS apellidos, Password AS password FROM Docente WHERE idDocente = ?', [id]);
         if (docente) return res.json({ ...docente, ocupacion: 'tutor' });
 
         return res.status(404).json({ error: 'Usuario no encontrado' });
@@ -679,6 +678,7 @@ app.get('/asesoriasSolicitadas/:id', async (req, res) => {
     }
 });
 
+
 app.post('/baja', async (req, res) => {
     const { idAsesoria, idUsuario } = req.body;
 
@@ -687,21 +687,22 @@ app.post('/baja', async (req, res) => {
     }
 
     try {
-        const [result] = await connection.execute(
-            `DELETE FROM alumno_asesoria WHERE id_asesoria = ? AND id_alumno = ?`,
+        const [result] = await pool.execute(
+            `DELETE FROM Inscripcion WHERE idAsesoria = ? AND idAlumno = ?`,
             [idAsesoria, idUsuario]
         );
 
         if (result.affectedRows === 0) {
-            return res.status(404).json({ error: 'No se encontró la relación alumno-asesoría.' });
+            return res.status(404).json({ error: 'No se encontró la inscripción del alumno en esa asesoría.' });
         }
 
-        res.sendStatus(204);
+        res.sendStatus(204); // Baja exitosa, sin contenido que devolver
     } catch (error) {
         console.error('Error al dar de baja al alumno:', error);
         res.status(500).json({ error: 'Error al eliminar la inscripción.', detalle: error.message });
     }
 });
+
 
 
 //inicio5
