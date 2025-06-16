@@ -223,6 +223,58 @@ app.post('/carrera', async (req, res) => {
 });
 
 //Registro listo
+//login con hashes
+app.post('/login', async (req, res) => {
+  const { id, password } = req.body;
+
+  try {
+      const connection = await mysql.createConnection(dbConfig);
+
+      const [docentes] = await connection.execute(
+          'SELECT idDocente AS id, Nombre, "tutor" AS ocupacion, Password FROM Docente WHERE idDocente = ?',
+          [id]
+      );
+
+      const [alumnos] = await connection.execute(
+          'SELECT idAlumno AS id, Nombre, "alumno" AS ocupacion, Password FROM Alumno WHERE idAlumno = ?',
+          [id]
+      );
+
+      await connection.end();
+
+      let usuario = null;
+      if (docentes.length > 0) usuario = docentes[0];
+      else if (alumnos.length > 0) usuario = alumnos[0];
+
+      if (!usuario) {
+          return res.status(401).json({ error: 'Usuario no encontrado.' });
+      }
+
+      const match = await bcrypt.compare(password, usuario.Password);
+
+      if (!match) {
+          return res.status(401).json({ error: 'Contraseña incorrecta.' });
+      }
+
+      return res.status(200).json({
+          mensaje: 'Login exitoso',
+          usuario: {
+              id: usuario.id,
+              nombre: usuario.Nombre,
+              ocupacion: usuario.ocupacion
+          }
+      });
+
+  } catch (error) {
+      res.status(500).json({ error: error.message });
+  }
+});
+
+
+//registro con encriptacion
+const bcrypt = require('bcrypt');
+const saltRounds = 10;
+
 app.post('/alumnos', async (req, res) => {
     const { id, nombre, apellidoPaterno, apellidoMaterno, idCarrera, password, semestre } = req.body;
 
@@ -231,9 +283,11 @@ app.post('/alumnos', async (req, res) => {
     }
 
     try {
+        const hashedPassword = await bcrypt.hash(password, saltRounds);
+
         await pool.query(
             'INSERT INTO Alumno (idAlumno, Nombre, ApellidoPaterno, ApellidoMaterno, idCarrera, Password, Semestre) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [id, nombre, apellidoPaterno, apellidoMaterno, idCarrera, password, semestre]
+            [id, nombre, apellidoPaterno, apellidoMaterno, idCarrera, hashedPassword, semestre]
         );
 
         res.status(201).json({ mensaje: 'Alumno registrado exitosamente.' });
@@ -241,26 +295,27 @@ app.post('/alumnos', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
-
-
 app.post('/tutores', async (req, res) => {
-    const { id, nombre, apellidoPaterno, apellidoMaterno, nivelAcademico, password } = req.body;
+  const { id, nombre, apellidoPaterno, apellidoMaterno, nivelAcademico, password } = req.body;
 
-    if (!id || !nombre || !apellidoPaterno || !apellidoMaterno || !nivelAcademico || !password) {
-        return res.status(400).json({ error: 'Faltan datos obligatorios del tutor.' });
-    }
+  if (!id || !nombre || !apellidoPaterno || !apellidoMaterno || !nivelAcademico || !password) {
+      return res.status(400).json({ error: 'Faltan datos obligatorios del tutor.' });
+  }
 
-    try {
-        await pool.query(
-            'INSERT INTO Docente (idDocente, Nombre, ApellidoPaterno, ApellidoMaterno, NivelAcademico, Password) VALUES (?, ?, ?, ?, ?, ?)',
-            [id, nombre, apellidoPaterno, apellidoMaterno, nivelAcademico, password]
-        );
+  try {
+      const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-        res.status(201).json({ mensaje: 'Tutor registrado exitosamente.' });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
+      await pool.query(
+          'INSERT INTO Docente (idDocente, Nombre, ApellidoPaterno, ApellidoMaterno, NivelAcademico, Password) VALUES (?, ?, ?, ?, ?, ?)',
+          [id, nombre, apellidoPaterno, apellidoMaterno, nivelAcademico, hashedPassword]
+      );
+
+      res.status(201).json({ mensaje: 'Tutor registrado exitosamente.' });
+  } catch (error) {
+      res.status(500).json({ error: error.message });
+  }
 });
+
 
 
 app.get('/usr/:id', async (req, res) => {
@@ -434,7 +489,7 @@ app.get('/asesorias', async (req, res) => {
              CONCAT(d.Nombre, ' ', d.ApellidoPaterno, ' ', d.ApellidoMaterno) AS maestroNombre,
              l.Nombre AS lugarNombre
       FROM Asesoria a
-      LEFT JOIN Materia m ON a.idAsesoria = m.idMateria
+      LEFT JOIN Materia m ON a.idAsesoria = m.idMateria -- Revisar relación real
       LEFT JOIN Docente d ON a.idDocente = d.idDocente
       LEFT JOIN Lugar l ON a.idLugar = l.idLugar
     `);
