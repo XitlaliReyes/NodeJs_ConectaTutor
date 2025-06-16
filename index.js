@@ -295,6 +295,7 @@ app.post('/alumnos', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+
 app.post('/tutores', async (req, res) => {
   const { id, nombre, apellidoPaterno, apellidoMaterno, nivelAcademico, password } = req.body;
 
@@ -384,26 +385,30 @@ app.put('/actualizar-carrera-materias', async (req, res) => {
 
 
 app.put('/usuarios', async (req, res) => {
-  const { id, ocupacion, nombre, apellidos, nivelAcademico, idCarrera, semestre, password } = req.body;
-  if (!id || !ocupacion) return res.status(400).json({ error: 'ID y ocupación son obligatorios' });
+  const { id, ocupacion, password } = req.body;
+
+  if (!id || !ocupacion || !password) {
+    return res.status(400).json({ error: 'ID, ocupación y nueva contraseña son obligatorios.' });
+  }
 
   try {
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+
     if (ocupacion === 'alumno') {
       await pool.query(
-        `UPDATE Alumno SET Nombre = ?, ApellidoPaterno = ?, ApellidoMaterno = ?, idCarrera = ?, Semestre = ?, Password = ?
-         WHERE idAlumno = ?`,
-        [nombre, apellidos.apellidoPaterno, apellidos.apellidoMaterno, idCarrera, semestre, password, id]
+        `UPDATE Alumno SET Password = ? WHERE idAlumno = ?`,
+        [hashedPassword, id]
       );
     } else if (ocupacion === 'tutor') {
       await pool.query(
-        `UPDATE Docente SET Nombre = ?, ApellidoPaterno = ?, ApellidoMaterno = ?, NivelAcademico = ?, Password = ?
-         WHERE idDocente = ?`,
-        [nombre, apellidos.apellidoPaterno, apellidos.apellidoMaterno, nivelAcademico, password, id]
+        `UPDATE Docente SET Password = ? WHERE idDocente = ?`,
+        [hashedPassword, id]
       );
     } else {
       return res.status(400).json({ error: 'Ocupación no válida' });
     }
-    res.json({ mensaje: 'Usuario actualizado exitosamente.' });
+
+    res.json({ mensaje: 'Contraseña actualizada exitosamente.' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
