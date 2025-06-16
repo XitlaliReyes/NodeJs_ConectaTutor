@@ -1,4 +1,6 @@
 require('dotenv').config();
+const dotenv = require('dotenv');
+const fs = require('fs');
 const express = require('express');
 const bodyParser = require('body-parser');
 const { encrypt, decrypt } = require('./encriptar');
@@ -37,6 +39,17 @@ const pool = mysql.createPool(dbConfig);
 //     "apellidos": "Reyes Zapata",
 //     "ocupacion": "admin",
 //     "password": "1",
+
+
+app.get('/api-key', (req, res) => {
+  try {
+    const env = dotenv.parse(fs.readFileSync('./sendgrid_android.env'));
+    res.json({ apiKey: env.API_KEY });
+  } catch (err) {
+    console.error('Error al leer archivo .env:', err);
+    res.status(500).json({ error: 'No se pudo cargar API_KEY' });
+  }
+});
 
 // Obtener todos los usuarios (docentes y alumnos)
 app.get('/usuarios', async (req, res) => {
