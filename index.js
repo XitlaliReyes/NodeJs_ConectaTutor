@@ -736,6 +736,8 @@ app.post('/alta', async (req, res) => {
   }
 });
 
+
+//Esto de Materia siento que va causar problemas mas adelante
 app.post('/asesoria', async (req, res) => {
   const { dias, horario_inicio, materia, id_solicitante } = req.body;
   if (!dias || !horario_inicio || !materia || !id_solicitante) {
@@ -743,18 +745,18 @@ app.post('/asesoria', async (req, res) => {
   }
 
   try {
-    const [matRow] = await pool.execute(
-      'SELECT idMateria FROM Materia WHERE Nombre = ?',
-      [materia]
-    );
-    if (matRow.length === 0) {
-      return res.status(400).json({ error: 'La materia proporcionada no existe.' });
-    }
+    // const [matRow] = await pool.execute(
+    //   'SELECT idMateria FROM Materia WHERE Nombre = ?',
+    //   [materia]
+    // );
+    // if (matRow.length === 0) {
+    //   return res.status(400).json({ error: 'La materia proporcionada no existe.' });
+    // }
 
     const horario_fin = calcularHorarioFin(horario_inicio);
     await pool.execute(
       `INSERT INTO Asesoria (FechaInicio, FechaFin, Dias, HorarioInicio, HorarioFin,
-        idDocente, idMateria, idLugar, Estado, idSolicitante)
+        idDocente, idLugar, Estado, idSolicitante)
        VALUES ('', '', ?, ?, ?, NULL, ?, NULL, 'Pendiente', ?)`,
       [dias, horario_inicio, horario_fin, matRow[0].idMateria, id_solicitante]
     );
@@ -788,6 +790,8 @@ app.post('/crear-asesoria', async (req, res) => {
     res.status(500).json({ error: 'Error al crear asesoría.' });
   }
 });
+
+
 
 app.put('/asesoria', async (req, res) => {
   const { id_asesoria, fecha_inicio, id_lugar, id_maestro } = req.body;
