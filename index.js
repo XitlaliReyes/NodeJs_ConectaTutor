@@ -16,7 +16,7 @@ app.use(express.json());
 app.use(bodyParser.json());
 
 const dbConfig = {
-    host: '192.168.1.128',
+    host: '192.168.1.86',
     user: 'lnxarchitect',
     password: 'Practica#4',
     database: 'conectatutor',
@@ -790,11 +790,86 @@ app.post('/asesoria', async (req, res) => {
     res.status(500).json({ error: 'Error al crear solicitud de asesoría.' });
   }
 });
-
+//no contiene materia pero si fucniona 
+/*app.post('/asesoria', async (req, res) => {
+  console.log('=== INICIO DEBUG ASESORIA ===');
+  console.log('Body recibido:', JSON.stringify(req.body, null, 2));
+  
+  const { dias, horario_inicio, idAlumno } = req.body;
+  
+  console.log('Datos extraídos:');
+  console.log('- dias:', dias, typeof dias);
+  console.log('- horario_inicio:', horario_inicio, typeof horario_inicio);
+  console.log('- idAlumno:', idAlumno, typeof idAlumno);
+  
+  if (!dias || !horario_inicio || !idAlumno) {
+    console.log('ERROR: Validación falló');
+    return res.status(400).json({ error: 'Datos incompletos para crear asesoría.' });
+  }
+  
+  try {
+    console.log('Calculando horario_fin...');
+    const horario_fin = calcularHorarioFin(horario_inicio);
+    console.log('horario_fin calculado:', horario_fin);
+    
+    console.log('Insertando asesoría...');
+    const [insertResult] = await pool.execute(
+      `INSERT INTO Asesoria (
+        idDocente, idAlumno, FechaInicio, FechaFin,
+        HorarioInicio, HorarioFin, Estado, idLugar
+      ) VALUES (NULL, ?, NULL, NULL, ?, ?, 'Pendiente', NULL)`,
+      [idAlumno, horario_inicio, horario_fin]
+    );
+    
+    const idAsesoria = insertResult.insertId;
+    console.log('Asesoría insertada con ID:', idAsesoria);
+    
+    console.log('Procesando días...');
+    for (const diaNombre of dias) {
+      console.log('Procesando día:', diaNombre);
+      
+      const [rows] = await pool.execute(
+        'SELECT idDia FROM Dias WHERE Dia = ?',
+        [diaNombre]
+      );
+      
+      if (rows.length === 0) {
+        console.warn(`Día no encontrado: ${diaNombre}`);
+        continue;
+      }
+      
+      const idDia = rows[0].idDia;
+      console.log('ID del día encontrado:', idDia);
+      
+      await pool.execute(
+        'INSERT INTO Asesoria_Dias (idAsesoria, idDia) VALUES (?, ?)',
+        [idAsesoria, idDia]
+      );
+      
+      console.log('Día insertado correctamente');
+    }
+    
+    console.log('Todo completado exitosamente');
+    res.status(201).json({ message: 'Solicitud de asesoría creada correctamente.', idAsesoria });
+    
+  } catch (err) {
+    console.log('=== ERROR CAPTURADO ===');
+    console.log('Mensaje:', err.message);
+    console.log('Stack:', err.stack);
+    console.log('Código SQL:', err.code);
+    console.log('SQL State:', err.sqlState);
+    console.log('=== FIN ERROR ===');
+    
+    res.status(500).json({ 
+      error: 'Error al crear solicitud de asesoría.',
+      details: err.message 
+    });
+  }
+});*/
 
 app.put('/asesoria', async (req, res) => {
-  const { id_asesoria, fecha_inicio, id_lugar, id_maestro } = req.body;
-  if (!id_asesoria || !fecha_inicio || !id_lugar || !id_maestro) {
+  const { id_asesoria, fecha_inicio, id_lugar, idDocente } = req.body;
+  if (!id_asesoria || !fecha_inicio || !id_lugar || !idDocente) {
     return res.status(400).json({ error: 'Se requieren id_asesoria, fecha, lugar y maestro.' });
   }
 
@@ -806,7 +881,7 @@ app.put('/asesoria', async (req, res) => {
       `UPDATE Asesoria
         SET FechaInicio = ?, FechaFin = ?, idLugar = ?, idDocente = ?, Estado = 'Activo'
        WHERE idAsesoria = ?`,
-      [fecha_inicio, fechaFin, id_lugar, id_maestro, id_asesoria]
+      [fecha_inicio, fechaFin, id_lugar, idDocente, id_asesoria]
     );
 
     if (result.affectedRows === 0) {
