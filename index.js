@@ -94,11 +94,13 @@ app.get('/usrandCarrera', async (req, res) => {
       SELECT 
         a.idAlumno AS id,
         a.Nombre,
+        "alumno" AS ocupacion,
         CONCAT(a.ApellidoPaterno, ' ', a.ApellidoMaterno) AS apellidos,
         a.Semestre,
         c.Nombre AS nombreCarrera
       FROM Alumno a
       JOIN Carrera c ON a.idCarrera = c.idCarrera
+      ORDER BY c.Nombre, a.Semestre
     `);
 
     await connection.end();
@@ -108,6 +110,31 @@ app.get('/usrandCarrera', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+
+app.get('/docentes', async (req, res) => {
+  try {
+    const connection = await mysql.createConnection(dbConfig);
+    const [docentes] = await connection.execute(`
+      SELECT idDocente, Nombre, 
+             CONCAT(ApellidoPaterno, ' ', ApellidoMaterno) AS apellidos, 
+             NivelAcademico
+      FROM Docente ORDER BY NivelAcademico
+    `);
+    await connection.end();
+
+    res.json(docentes.map(d => ({
+      id: d.idDocente,
+      Nombre: d.Nombre,
+      apellidos: d.apellidos,
+      NivelAcademico: d.NivelAcademico,
+      ocupacion: d.idDocente === 2629734 ? 'admin' : 'tutor'
+    })));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 
 
 
