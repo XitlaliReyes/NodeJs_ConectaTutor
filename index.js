@@ -1124,7 +1124,7 @@ app.get('/asesoriasPendientes', async (req, res) => {
 });
 
 });*/
-app.get('/asesorias/asesor/:id', async (req, res) => {
+/*app.get('/asesorias/asesor/:id', async (req, res) => {
   const { id } = req.params;
 
   try {
@@ -1160,7 +1160,78 @@ app.get('/asesorias/asesor/:id', async (req, res) => {
     res.status(500).json({ error: 'Error al obtener asesorías del profesor.', detalle: err.message });
   }
 });
+*/
 
+app.post('/crear-asesoria', async (req, res) => {
+  const {
+      fecha_inicio,
+      dias,
+      horario_inicio,
+      id_lugar,
+      id_maestro,
+      estado,
+      id_solicitante
+  } = req.body;
+
+  try {
+      // Validaciones básicas
+      if (!fecha_inicio || !dias || !horario_inicio || !id_lugar || !id_maestro) {
+          return res.status(400).json({ 
+              error: 'Faltan campos obligatorios' 
+          });
+      }
+
+      // Calcular fecha fin y horario fin automáticamente
+      const fecha_fin = calcularFechaFin(fecha_inicio);
+      const horario_fin = calcularHorarioFin(horario_inicio);
+
+      // Insertar la asesoría con fechas y horarios calculados
+      const [result] = await pool.query(`
+          INSERT INTO Asesoria (
+              idDocente, 
+              idAlumno, 
+              FechaInicio, 
+              FechaFin,
+              HorarioInicio, 
+              HorarioFin,
+              Estado, 
+              idLugar
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [id_maestro, id_solicitante, fecha_inicio, fecha_fin, horario_inicio, horario_fin, estado, id_lugar]);
+
+      const asesoriaId = result.insertId;
+
+      // Procesar los días
+      const diasArray = dias.split(' y ').map(dia => dia.trim());
+      
+      for (const dia of diasArray) {
+          const [diaResult] = await pool.query(`
+              SELECT idDia FROM Dias WHERE Dia = ?
+          `, [dia]);
+
+          if (diaResult.length > 0) {
+              await pool.query(`
+                  INSERT INTO Asesoria_Dias (idAsesoria, idDia) 
+                  VALUES (?, ?)
+              `, [asesoriaId, diaResult[0].idDia]);
+          }
+      }
+
+      res.status(201).json({ 
+          message: 'Asesoría creada exitosamente',
+          id: asesoriaId,
+          fecha_fin: fecha_fin,
+          horario_fin: horario_fin
+      });
+
+  } catch (error) {
+      console.error('Error al crear asesoría:', error);
+      res.status(500).json({ 
+          error: 'Error al crear la asesoría', 
+          detalle: error.message 
+      });
+  }
+});
 
 function calcularHorarioFin(horarioInicio) {
   const [hora, minutos] = horarioInicio.split(':').map(Number);
