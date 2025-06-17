@@ -916,7 +916,7 @@ app.put('/cancelarasesoria', async (req, res) => {
 });
 
 
-app.get('/asesoriasPendientes', async (req, res) => {
+/*app.get('/asesoriasPendientes', async (req, res) => {
   try {
     const [rows] = await pool.query(`
       SELECT a.idAsesoria AS id_asesoria, a.FechaInicio AS fecha_inicio,
@@ -935,10 +935,40 @@ app.get('/asesoriasPendientes', async (req, res) => {
     console.error(err);
     res.status(500).json({ error: 'Error al obtener asesorías pendientes.' });
   }
+});*/
+app.get('/asesoriasPendientes', async (req, res) => {
+  try {
+      const [asesorias] = await pool.query(`
+          SELECT 
+              a.idAsesoria AS id_asesoria, 
+              a.FechaInicio AS fecha_inicio, 
+              a.FechaFin AS fecha_fin,
+              GROUP_CONCAT(d.Dia ORDER BY d.idDia SEPARATOR ', ') AS dias,
+              a.HorarioInicio AS horario_inicio, 
+              a.HorarioFin AS horario_fin,
+              a.estado
+          FROM Asesoria a
+          JOIN Asesoria_Dias ad ON ad.IdAsesoria = a.idAsesoria
+          JOIN Dias d ON d.idDia = ad.IdDia
+          WHERE a.estado = 'Pendiente'
+          GROUP BY 
+              a.idAsesoria
+      `);
+
+      if (asesorias.length === 0) {
+          return res.status(404).json({ error: 'No hay asesorías activas disponibles.' });
+      }
+
+      res.json(asesorias);
+
+  } catch (error) {
+      console.error('Error al obtener asesorías disponibles:', error);
+      res.status(500).json({ error: 'Error al procesar las asesorías del alumno.', detalle: error.message });
+  }
 });
 
 
-app.get('/asesorias/asesor/:id', async (req, res) => {
+/*app.get('/asesorias/asesor/:id', async (req, res) => {
   const { id } = req.params;
   try {
     const [rows] = await pool.query(`
@@ -962,7 +992,44 @@ app.get('/asesorias/asesor/:id', async (req, res) => {
     console.error(err);
     res.status(500).json({ error: 'Error al obtener asesorías del profesor.' });
   }
+});*/
+app.get('/asesorias/asesor/:id', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const [rows] = await pool.query(`
+      SELECT 
+        a.idAsesoria AS id_asesoria,
+        a.FechaInicio AS fecha_inicio,
+        a.FechaFin AS fecha_fin,
+        GROUP_CONCAT(d.Dia ORDER BY d.idDia SEPARATOR ', ') AS dias,
+        a.HorarioInicio AS horario_inicio,
+        a.HorarioFin AS horario_fin,
+        a.Estado AS estado,
+        m.Nombre AS materiaNombre,
+        CONCAT(doc.Nombre, ' ', doc.ApellidoPaterno, ' ', doc.ApellidoMaterno) AS maestroNombre,
+        l.Nombre AS lugarNombre
+      FROM Asesoria a
+      LEFT JOIN Materia m ON a.idAsesoria = m.idMateria
+      LEFT JOIN Docente doc ON a.idDocente = doc.idDocente
+      LEFT JOIN Lugar l ON a.idLugar = l.idLugar
+      LEFT JOIN Asesoria_Dias ad ON ad.IdAsesoria = a.idAsesoria
+      LEFT JOIN Dias d ON d.idDia = ad.IdDia
+      WHERE a.idDocente = ?
+      GROUP BY a.idAsesoria
+    `, [id]);
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'El profesor no tiene asesorías asignadas.' });
+    }
+
+    res.json(rows);
+  } catch (err) {
+    console.error('Error al obtener asesorías del profesor:', err);
+    res.status(500).json({ error: 'Error al obtener asesorías del profesor.', detalle: err.message });
+  }
 });
+
 
 function calcularHorarioFin(horarioInicio) {
   const [hora, minutos] = horarioInicio.split(':').map(Number);
