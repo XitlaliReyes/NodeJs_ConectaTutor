@@ -53,18 +53,38 @@ app.get('/api-key', (req, res) => {
 
 // Obtener todos los usuarios (docentes y alumnos)
 app.get('/usuarios', async (req, res) => {
-    try {
-        const connection = await mysql.createConnection(dbConfig);
-        const [docentes] = await connection.execute('SELECT idDocente AS id, Nombre, "tutor" AS ocupacion, CONCAT(ApellidoPaterno, " ", ApellidoMaterno) AS apellidos, Password AS password FROM Docente');
-        const [alumnos] = await connection.execute('SELECT idAlumno AS id, Nombre, "alumno" AS ocupacion, CONCAT(ApellidoPaterno, " ", ApellidoMaterno) AS apellidos, Password AS password, Semestre FROM Alumno');
-        await connection.end();
+  try {
+    const connection = await mysql.createConnection(dbConfig);
 
-        const usuarios = [...docentes, ...alumnos];
-        res.json(usuarios);
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
+    const [docentesRaw] = await connection.execute(`
+      SELECT idDocente AS id, Nombre, ApellidoPaterno, ApellidoMaterno, Password AS password 
+      FROM Docente
+    `);
+
+    const docentes = docentesRaw.map(docente => ({
+      id: docente.id,
+      Nombre: docente.Nombre,
+      ocupacion: (docente.id === 2629734) ? 'admin' : 'tutor',
+      apellidos: `${docente.ApellidoPaterno} ${docente.ApellidoMaterno}`,
+      password: docente.password
+    }));
+
+    const [alumnos] = await connection.execute(`
+      SELECT idAlumno AS id, Nombre, "alumno" AS ocupacion, 
+             CONCAT(ApellidoPaterno, " ", ApellidoMaterno) AS apellidos, 
+             Password AS password, Semestre 
+      FROM Alumno
+    `);
+
+    await connection.end();
+
+    const usuarios = [...docentes, ...alumnos];
+    res.json(usuarios);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
+
 
 // Obtener carrera y materias
 app.get('/carrera-materias', async (req, res) => {
@@ -243,7 +263,10 @@ app.post('/login', async (req, res) => {
       await connection.end();
 
       let usuario = null;
-      if (docentes.length > 0) usuario = docentes[0];
+      if (docentes.length > 0) {
+          usuario = docentes[0];
+          usuario.ocupacion = (usuario.id === 2629734) ? 'admin' : 'tutor';
+      }
       else if (alumnos.length > 0) usuario = alumnos[0];
 
       if (!usuario) {
@@ -454,8 +477,11 @@ app.get('/alumnos/:id_asesoria', async (req, res) => {
   }
 });
 
+
 app.post('/baja-asesoria', async (req, res) => {
   const { id_asesoria, id_maestro } = req.body;
+  const ADMIN_ID = 2629734; // ID del admin
+
   if (!id_asesoria || !id_maestro) {
     return res.status(400).json({ error: 'Faltan datos obligatorios.' });
   }
@@ -464,8 +490,12 @@ app.post('/baja-asesoria', async (req, res) => {
     const [asesoria] = await pool.query(
       'SELECT idDocente FROM Asesoria WHERE idAsesoria = ?', [id_asesoria]
     );
-    if (asesoria.length === 0) return res.status(404).json({ error: 'Asesoría no encontrada.' });
-    if (asesoria[0].idDocente !== id_maestro) {
+
+    if (asesoria.length === 0)
+      return res.status(404).json({ error: 'Asesoría no encontrada.' });
+
+    // Si no es el docente asignado y no es el admin, rechazar
+    if (asesoria[0].idDocente !== id_maestro && id_maestro !== ADMIN_ID) {
       return res.status(403).json({ error: 'No tienes permiso para cancelar esta asesoría.' });
     }
 
@@ -480,6 +510,7 @@ app.post('/baja-asesoria', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
 
 
 //Obtiene las materias mal, pero x por el momento
