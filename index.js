@@ -86,6 +86,31 @@ app.get('/usuarios', async (req, res) => {
 });
 
 
+app.get('/usrandCarrera', async (req, res) => {
+  try {
+    const connection = await mysql.createConnection(dbConfig);
+
+    const [alumnos] = await connection.execute(`
+      SELECT 
+        a.idAlumno AS id,
+        a.Nombre,
+        CONCAT(a.ApellidoPaterno, ' ', a.ApellidoMaterno) AS apellidos,
+        a.Semestre,
+        c.Nombre AS nombreCarrera
+      FROM Alumno a
+      JOIN Carrera c ON a.idCarrera = c.idCarrera
+    `);
+
+    await connection.end();
+
+    res.json(alumnos);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
+
 // Obtener carrera y materias
 app.get('/carrera-materias', async (req, res) => {
     try {
