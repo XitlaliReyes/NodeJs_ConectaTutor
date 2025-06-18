@@ -840,7 +840,88 @@ app.get('/asesoriasMongo/:id', async (req, res) => {
   }
 });
 
+app.get('/asesoriasMongo/alumno/:id', async (req, res) => {
+  const { id } = req.params;
 
+  try {
+    // 1. Obtener asesorías inscritas del alumno desde MySQL
+    const [inscritas] = await pool.query(
+      'SELECT idAsesoria FROM Inscripcion WHERE idAlumno = ?',
+      [id]
+    );
+
+    if (inscritas.length === 0) {
+      return res.status(404).json({ error: 'El alumno no tiene asesorías asignadas.' });
+    }
+
+    const idsAsesorias = inscritas.map(i => i.idAsesoria);
+
+    // 2. Conectar a MongoDB y obtener asesorías "En curso" de esos ids
+    await mongoClient.connect();
+    const mongoDB = mongoClient.db('conectatutor');
+    const asesoriasCol = mongoDB.collection('asesorias');
+
+    const asesoriasMongo = await asesoriasCol.find({
+      idAsesoria: { $in: idsAsesorias },
+      estado: 'En curso'
+    }).toArray();
+
+    if (asesoriasMongo.length === 0) {
+      return res.status(404).json({ error: 'No hay asesorías en curso asignadas al alumno.' });
+    }
+
+    // 3. Obtener nombres de materia, lugar y docente desde MySQL
+    const idsMateria = asesoriasMongo.map(a => a.idMateria);
+    const idsLugar = asesoriasMongo.map(a => a.idLugar);
+    const idsDocente = asesoriasMongo.map(a => a.idDocente);
+
+    const [materias] = await pool.query('SELECT idMateria, Nombre FROM Materia WHERE idMateria IN (?)', [idsMateria]);
+    const [lugares] = await pool.query('SELECT idLugar, Nombre FROM Lugar WHERE idLugar IN (?)', [idsLugar]);
+    const [docentes] = await pool.query(`
+      SELECT idDocente, CONCAT(Nombre, ' ', ApellidoPaterno, ' ', ApellidoMaterno) AS nombreCompleto
+      FROM Docente
+      WHERE idDocente IN (?)
+    `, [idsDocente]);
+
+    const materiasMap = Object.fromEntries(materias.map(m => [m.idMateria, m.Nombre]));
+    const lugaresMap = Object.fromEntries(lugares.map(l => [l.idLugar, l.Nombre]));
+    const docentesMap = Object.fromEntries(docentes.map(d => [d.idDocente, d.nombreCompleto]));
+
+    // 4. Obtener días desde Asesoria_Dias y Dias
+    const [diasQuery] = await pool.query(`
+      SELECT a.idAsesoria, GROUP_CONCAT(d.Dia ORDER BY d.idDia) AS dias
+      FROM Asesoria a
+      JOIN Asesoria_Dias ad ON ad.IdAsesoria = a.idAsesoria
+      JOIN Dias d ON d.idDia = ad.IdDia
+      WHERE a.idAsesoria IN (?)
+      GROUP BY a.idAsesoria
+    `, [idsAsesorias]);
+
+    const diasMap = Object.fromEntries(diasQuery.map(d => [d.idAsesoria, d.dias]));
+
+    // 5. Armar la respuesta final
+    const asesoriasFinal = asesoriasMongo.map(a => ({
+      id_asesoria: a.idAsesoria,
+      fecha_inicio: a.fechaInicio,
+      fecha_fin: a.fechaFin,
+      dias: diasMap[a.idAsesoria] || 'No especificado',
+      horario_inicio: a.horarioInicio,
+      horario_fin: a.horarioFin,
+      estado: a.estado,
+      materia: materiasMap[a.idMateria] || 'Materia desconocida',
+      lugar: lugaresMap[a.idLugar] || 'Lugar desconocido',
+      docente: docentesMap[a.idDocente] || 'Docente desconocido'
+    }));
+
+    res.json(asesoriasFinal);
+
+  } catch (error) {
+    console.error('Error al obtener asesorías del alumno desde Mongo + MySQL:', error);
+    res.status(500).json({ error: 'Error al procesar las asesorías del alumno.', detalle: error.message });
+  } finally {
+    await mongoClient.close();
+  }
+});
 
 
 // ------------ Asesorias de MongoDB ------------
