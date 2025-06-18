@@ -923,6 +923,48 @@ app.get('/asesoriasMongo/alumno/:id', async (req, res) => {
   }
 });
 
+app.put('/cancelarasesoriaMongo', async (req, res) => {
+  const { idAsesoria } = req.body;
+
+  if (!idAsesoria) {
+    return res.status(400).json({ error: 'El ID de la asesoría es obligatorio.' });
+  }
+
+  try {
+    // 1. Cancelar en MySQL
+    const [result] = await pool.execute(
+      `UPDATE Asesoria SET Estado = 'Cancelada' WHERE idAsesoria = ?`,
+      [idAsesoria]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Asesoría no encontrada en MySQL.' });
+    }
+
+    // 2. Cancelar en MongoDB
+    await mongoClient.connect();
+    const mongoDB = mongoClient.db('conectatutor');
+    const mongoCol = mongoDB.collection('asesorias');
+
+    const mongoResult = await mongoCol.updateOne(
+      { idAsesoria: idAsesoria }, // Busca por ID
+      { $set: { estado: 'Cancelada' } } // Cambia el estado
+    );
+
+    if (mongoResult.matchedCount === 0) {
+      console.warn(`Asesoría con idAsesoria ${idAsesoria} no encontrada en MongoDB.`);
+      // No es obligatorio lanzar error si no está en Mongo, puedes quitar este bloque si deseas
+    }
+
+    res.sendStatus(204); // Sin contenido, todo bien
+
+  } catch (err) {
+    console.error('Error al cancelar asesoría:', err);
+    res.status(500).json({ error: 'Error al cancelar la asesoría.' });
+  }
+});
+
+
 
 // ------------ Asesorias de MongoDB ------------
 
