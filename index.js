@@ -8,6 +8,11 @@ const cors = require('cors');
 const mysql = require('mysql2/promise');
 const sgMail = require('@sendgrid/mail');
 
+//Conexion con MongoDB
+const { MongoClient } = require('mongodb');
+const uri = 'mongodb://admin:admin123@192.168.1.86:27017/conectatutor?authSource=admin';
+const client = new MongoClient(uri);
+
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 const app = express();
@@ -597,6 +602,21 @@ app.get('/asesorias', async (req, res) => {
 });
 
 
+//Asesorias de MongoDB
+app.get('/asesoriasMongo', async (req, res) => {
+  try {
+    await client.connect();
+    const db = client.db('conectatutor');
+    const collection = db.collection('asesorias');
+    const datos = await collection.find().toArray();
+    res.json(datos);
+  } catch (err) {
+    res.status(500).send(err.toString());
+  } finally {
+    await client.close();
+  }
+});
+
 //inicio4
 app.get('/asesorias/alumno/:id', async (req, res) => {
     const { id } = req.params;
@@ -604,8 +624,8 @@ app.get('/asesorias/alumno/:id', async (req, res) => {
         const [asesorias] = await pool.query(`
             SELECT 
                 a.idAsesoria AS id_asesoria,
-                a.FechaInicio AS fecha_inicio, 
-                a.FechaFin AS fecha_fin,
+                DATE_FORMAT(a.FechaInicio, '%Y-%m-%d') AS fecha_inicio, 
+                DATE_FORMAT(a.FechaFin, '%Y-%m-%d') AS fecha_fin,
                 GROUP_CONCAT(d.Dia ORDER BY d.idDia SEPARATOR ', ') AS dias,
                 a.HorarioInicio AS horario_inicio, 
                 a.HorarioFin AS horario_fin
@@ -659,8 +679,8 @@ app.get('/asesorias/:id', async (req, res) => {
         const [asesorias] = await pool.query(`
             SELECT 
                 a.idAsesoria AS id_asesoria, 
-                a.FechaInicio AS fecha_inicio, 
-                a.FechaFin AS fecha_fin,
+                DATE_FORMAT(a.FechaInicio, '%Y-%m-%d') AS fecha_inicio, 
+                DATE_FORMAT(a.FechaFin, '%Y-%m-%d') AS fecha_fin,
                 GROUP_CONCAT(d.Dia ORDER BY d.idDia SEPARATOR ', ') AS dias,
                 a.HorarioInicio AS horario_inicio, 
                 a.HorarioFin AS horario_fin,
