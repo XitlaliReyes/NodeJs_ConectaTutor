@@ -613,7 +613,7 @@ app.get('/asesoriasMongo', async (req, res) => {
   } catch (err) {
     res.status(500).send(err.toString());
   } finally {
-    await mongoClient.close();
+    //await mongoClient.close();
   }
 });
 
@@ -632,8 +632,8 @@ app.post('/asesoriaMongo', async (req, res) => {
       `INSERT INTO Asesoria (
         idDocente, idAlumno, FechaInicio, FechaFin,
         HorarioInicio, HorarioFin, Estado, idLugar
-      ) VALUES (?, ?, ?, ?, ?, ?, 'Pendiente', ?)`,
-      [idDocente, idAlumno, fechaInicio, fechaFin, horario_inicio, horario_fin, idLugar]
+      ) VALUES (NULL, ?, NULL, NULL, ?, ?, 'Pendiente', ?)`,
+      [idAlumno, horario_inicio, horario_fin]
     );
 
     const idAsesoria = insertResult.insertId;
@@ -665,19 +665,19 @@ app.post('/asesoriaMongo', async (req, res) => {
 
     const asesoríaMongo = {
       idAsesoria,
-      idDocente,
+      idDocente: null,
       idAlumno,
-      fechaInicio,
-      fechaFin,
+      fechaInicio: null,
+      fechaFin: null,
       horarioInicio: horario_inicio,
       horarioFin: horario_fin,
       estado: 'Pendiente',
-      idLugar,
+      idLugar: null,
       idMateria: materia
     };
 
     await mongoCol.insertOne(asesoríaMongo);
-    await mongoClient.close();
+    //await mongoClient.close();
 
     res.status(201).json({ message: 'Solicitud de asesoría creada correctamente.', idAsesoria });
 
@@ -746,7 +746,7 @@ app.put('/asesoriaMongo', async (req, res) => {
       }
     );
 
-    await mongoClient.close();
+    //await mongoClient.close();
 
     if (mongoUpdateResult.matchedCount === 0) {
       return res.status(404).json({ error: 'Asesoría no encontrada en MongoDB.' });
@@ -836,7 +836,7 @@ app.get('/asesoriasMongo/:id', async (req, res) => {
     console.error('Error al obtener asesorías desde Mongo + MySQL:', error);
     res.status(500).json({ error: 'Error al procesar las asesorías.', detalle: error.message });
   } finally {
-    await mongoClient.close();
+    //await mongoClient.close();
   }
 });
 
@@ -919,7 +919,7 @@ app.get('/asesoriasMongo/alumno/:id', async (req, res) => {
     console.error('Error al obtener asesorías del alumno desde Mongo + MySQL:', error);
     res.status(500).json({ error: 'Error al procesar las asesorías del alumno.', detalle: error.message });
   } finally {
-    await mongoClient.close();
+    //await mongoClient.close();
   }
 });
 
