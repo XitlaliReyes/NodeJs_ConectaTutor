@@ -10,7 +10,7 @@ const sgMail = require('@sendgrid/mail');
 
 //Conexion con MongoDB
 const { MongoClient } = require('mongodb');
-const uri = 'mongodb://admin:admin123@192.168.1.86:27017/conectatutor?authSource=admin';
+const uri = 'mongodb://admin:admin123@192.168.137.142:27017/conectatutor?authSource=admin';
 const mongoClient = new MongoClient(uri);
 
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
@@ -21,7 +21,7 @@ app.use(express.json());
 app.use(bodyParser.json());
 
 const dbConfig = {
-    host: '192.168.1.86',
+    host: '192.168.137.142',
     user: 'lnxarchitect',
     password: 'Practica#4',
     database: 'conectatutor',
@@ -687,7 +687,7 @@ app.get('/asesoriasSolicitadasMongo/:id', async (req, res) => {
 
     // Buscar asesorías del alumno con estado pendiente
     const asesorias = await mongoCol.find({
-      idAlumno: parseInt(id),  // Asegúrate de usar el tipo correcto
+      idAlumno: parseInt(id),
       estado: 'Pendiente'
     }).toArray();
 
@@ -695,22 +695,45 @@ app.get('/asesoriasSolicitadasMongo/:id', async (req, res) => {
       return res.status(404).json({ error: 'No hay asesorías activas disponibles.' });
     }
 
-    // Opcional: limpiar o transformar los datos si es necesario
+    // Obtener idAsesoria y idMateria únicos
+    const idsAsesorias = asesorias.map(a => a.idAsesoria);
+    const idsMateria = [...new Set(asesorias.map(a => a.idMateria))];
+
+    // Consultar días desde MySQL
+    const [diasPorAsesoria] = await pool.query(`
+      SELECT ad.idAsesoria, GROUP_CONCAT(d.Dia ORDER BY d.idDia SEPARATOR ', ') AS dias
+      FROM Asesoria_Dias ad
+      JOIN Dias d ON d.idDia = ad.idDia
+      WHERE ad.idAsesoria IN (?)
+      GROUP BY ad.idAsesoria
+    `, [idsAsesorias]);
+
+    // Consultar nombres de materias desde MySQL
+    const [materias] = await pool.query(`
+      SELECT idMateria, Nombre FROM Materia
+      WHERE idMateria IN (?)
+    `, [idsMateria]);
+
+    // Mapear resultados
+    const diasMap = Object.fromEntries(diasPorAsesoria.map(d => [d.idAsesoria, d.dias]));
+    const materiasMap = Object.fromEntries(materias.map(m => [m.idMateria, m.Nombre]));
+
+    // Armar respuesta final
     const resultado = asesorias.map(a => ({
       idAsesoria: a.idAsesoria,
-      fechaInicio: a.fechaInicio || null,
-      fechaFin: a.fechaFin || null,
-      dias: a.dias || [],
+      fechaInicio: a.fechaInicio || 'Por definir',
+      fechaFin: a.fechaFin || 'Por definir',
+      dias: diasMap[a.idAsesoria] || 'Por definir',
       horarioInicio: a.horarioInicio,
       horarioFin: a.horarioFin,
       estado: a.estado,
-      materia: a.nombreMateria || a.idMateria || 'Desconocida'
+      materia: materiasMap[a.idMateria] || 'Materia desconocida'
     }));
 
     res.json(resultado);
 
   } catch (error) {
-    console.error('Error al obtener asesorías desde MongoDB:', error);
+    console.error('Error al obtener asesorías desde MongoDB + MySQL:', error);
     res.status(500).json({ error: 'Error al procesar las asesorías del alumno.', detalle: error.message });
   }
 });
@@ -972,22 +995,31 @@ app.get('/asesoriasMongo/:id', async (req, res) => {
       return res.status(404).json({ error: 'No hay materias registradas para la carrera del alumno.' });
     }
 
-    // 3. Conectar con MongoDB y obtener asesorías válidas
+    // 3. Obtener idAsesorias donde ya está inscrito el alumno (desde MySQL)
+    const [inscripciones] = await pool.query(
+      'SELECT idAsesoria FROM Inscripcion WHERE idAlumno = ?',
+      [id]
+    );
+    const idsAsesoriasInscrito = inscripciones.map(i => i.idAsesoria);
+
+    // 4. Conectar con MongoDB y obtener asesorías válidas
     await mongoClient.connect();
     const mongoDB = mongoClient.db('conectatutor');
     const asesoriasCol = mongoDB.collection('asesorias');
 
-    const asesoriasMongo = await asesoriasCol.find({
+    const filtroMongo = {
       estado: 'En curso',
-      inscritos: { $ne: parseInt(id) },
-      idMateria: { $in: materiasValidas }
-    }).toArray();
+      idMateria: { $in: materiasValidas },
+      idAsesoria: { $nin: idsAsesoriasInscrito }  // excluye las inscritas
+    };
+
+    const asesoriasMongo = await asesoriasCol.find(filtroMongo).toArray();
 
     if (asesoriasMongo.length === 0) {
       return res.status(404).json({ error: 'No hay asesorías activas disponibles para la carrera del alumno.' });
     }
 
-    // 4. Obtener datos complementarios desde MySQL
+    // 5. Obtener datos complementarios desde MySQL
     const idsAsesorias = asesoriasMongo.map(a => a.idAsesoria);
     const idsMateria = asesoriasMongo.map(a => a.idMateria);
     const idsLugar = asesoriasMongo.map(a => a.idLugar);
@@ -1019,13 +1051,13 @@ app.get('/asesoriasMongo/:id', async (req, res) => {
       [idsAsesorias]
     );
 
-    // 5. Mapear resultados para acceso rápido
+    // 6. Mapear resultados para acceso rápido
     const materiasMap = Object.fromEntries(materias.map(m => [m.idMateria, m.Nombre]));
     const lugaresMap = Object.fromEntries(lugares.map(l => [l.idLugar, l.Nombre]));
     const docentesMap = Object.fromEntries(docentes.map(d => [d.idDocente, d.nombreCompleto]));
     const diasMap = Object.fromEntries(diasPorAsesoria.map(d => [d.idAsesoria, d.dias]));
 
-    // 6. Armar respuesta final
+    // 7. Armar respuesta final
     const asesoriasFinal = asesoriasMongo.map(a => ({
       id_asesoria: a.idAsesoria,
       fecha_inicio: a.fechaInicio,
@@ -1045,9 +1077,10 @@ app.get('/asesoriasMongo/:id', async (req, res) => {
     console.error('Error al obtener asesorías desde Mongo + MySQL:', error);
     res.status(500).json({ error: 'Error al procesar las asesorías.', detalle: error.message });
   } finally {
-    // await mongoClient.close(); // si decides cerrar la conexión
+    // await mongoClient.close(); // opcional si manejas persistencia
   }
 });
+
 
 
 app.get('/asesoriasMongo/alumno/:id', async (req, res) => {
@@ -1331,37 +1364,41 @@ app.get('/asesorias/:id', async (req, res) => {
 */
 
 app.get('/asesoriasSolicitadas/:id', async (req, res) => {
-    const { id } = req.params;
+  const { id } = req.params;
 
-    try {
-        const [asesorias] = await pool.query(`
-            SELECT 
-                a.idAsesoria AS id_asesoria, 
-                a.FechaInicio AS fecha_inicio, 
-                a.FechaFin AS fecha_fin,
-                GROUP_CONCAT(d.Dia ORDER BY d.idDia SEPARATOR ', ') AS dias,
-                a.HorarioInicio AS horario_inicio, 
-                a.HorarioFin AS horario_fin,
-                a.estado
-            FROM Asesoria a
-            JOIN Asesoria_Dias ad ON ad.IdAsesoria = a.idAsesoria
-            JOIN Dias d ON d.idDia = ad.IdDia
-            WHERE a.estado = 'Pendiente'
-              AND a.idAlumno = ?
-            GROUP BY 
-                a.idAsesoria
-        `, [id]);
+  try {
+    await mongoClient.connect();
+    const mongoDB = mongoClient.db('conectatutor');
+    const mongoCol = mongoDB.collection('asesorias');
 
-        if (asesorias.length === 0) {
-            return res.status(404).json({ error: 'No hay asesorías activas disponibles.' });
-        }
+    // Buscar asesorías del alumno con estado pendiente
+    const asesorias = await mongoCol.find({
+      idAlumno: parseInt(id),  // Asegúrate de usar el tipo correcto
+      estado: 'Pendiente'
+    }).toArray();
 
-        res.json(asesorias);
-
-    } catch (error) {
-        console.error('Error al obtener asesorías disponibles:', error);
-        res.status(500).json({ error: 'Error al procesar las asesorías del alumno.', detalle: error.message });
+    if (asesorias.length === 0) {
+      return res.status(404).json({ error: 'No hay asesorías activas disponibles.' });
     }
+
+    // Opcional: limpiar o transformar los datos si es necesario
+    const resultado = asesorias.map(a => ({
+      idAsesoria: a.idAsesoria,
+      fechaInicio: a.fechaInicio || null,
+      fechaFin: a.fechaFin || null,
+      dias: a.dias || [],
+      horarioInicio: a.horarioInicio,
+      horarioFin: a.horarioFin,
+      estado: a.estado,
+      materia: a.nombreMateria || a.idMateria || 'Desconocida'
+    }));
+
+    res.json(resultado);
+
+  } catch (error) {
+    console.error('Error al obtener asesorías desde MongoDB:', error);
+    res.status(500).json({ error: 'Error al procesar las asesorías del alumno.', detalle: error.message });
+  }
 });
 
 app.post('/baja', async (req, res) => {
@@ -1760,37 +1797,91 @@ app.put('/cancelarasesoria', async (req, res) => {
     res.status(500).json({ error: 'Error al obtener asesorías pendientes.' });
   }
 });*/
+
+
+// PENULTIMAAAAAA VERSION SI FUNCIONAL
+// app.get('/asesoriasPendientes', async (req, res) => {
+//   try {
+//       const [asesorias] = await pool.query(`
+//           SELECT 
+//               a.idAsesoria AS id_asesoria, 
+//               a.FechaInicio AS fecha_inicio, 
+//               a.FechaFin AS fecha_fin,
+//               GROUP_CONCAT(d.Dia ORDER BY d.idDia SEPARATOR ', ') AS dias,
+//               a.HorarioInicio AS horario_inicio, 
+//               a.HorarioFin AS horario_fin,
+//               a.estado
+//           FROM Asesoria a
+//           JOIN Asesoria_Dias ad ON ad.IdAsesoria = a.idAsesoria
+//           JOIN Dias d ON d.idDia = ad.IdDia
+//           WHERE a.estado = 'Pendiente'
+//           GROUP BY 
+//               a.idAsesoria
+//       `);
+
+//       if (asesorias.length === 0) {
+//           return res.status(404).json({ error: 'No hay asesorías activas disponibles.' });
+//       }
+
+//       res.json(asesorias);
+
+//   } catch (error) {
+//       console.error('Error al obtener asesorías disponibles:', error);
+//       res.status(500).json({ error: 'Error al procesar las asesorías del alumno.', detalle: error.message });
+//   }
+// });
+
+
 app.get('/asesoriasPendientes', async (req, res) => {
   try {
-      const [asesorias] = await pool.query(`
-          SELECT 
-              a.idAsesoria AS id_asesoria, 
-              a.FechaInicio AS fecha_inicio, 
-              a.FechaFin AS fecha_fin,
-              GROUP_CONCAT(d.Dia ORDER BY d.idDia SEPARATOR ', ') AS dias,
-              a.HorarioInicio AS horario_inicio, 
-              a.HorarioFin AS horario_fin,
-              a.estado
-          FROM Asesoria a
-          JOIN Asesoria_Dias ad ON ad.IdAsesoria = a.idAsesoria
-          JOIN Dias d ON d.idDia = ad.IdDia
-          WHERE a.estado = 'Pendiente'
-          GROUP BY 
-              a.idAsesoria
-      `);
+    // 1. Obtener asesorías desde MySQL que estén en estado 'Pendiente' y sin docente asignado
+    const [asesorias] = await pool.query(`
+      SELECT 
+        a.idAsesoria AS id_asesoria,
+        a.FechaInicio AS fecha_inicio, 
+        a.FechaFin AS fecha_fin,
+        GROUP_CONCAT(DISTINCT d.Dia ORDER BY d.idDia SEPARATOR ', ') AS dias,
+        a.HorarioInicio AS horario_inicio, 
+        a.HorarioFin AS horario_fin,
+        l.Nombre AS lugarNombre,
+        CONCAT(dc.Nombre, ' ', dc.ApellidoPaterno, ' ', dc.ApellidoMaterno) AS maestroNombre,
+        a.Estado AS estado
+      FROM Asesoria a
+      LEFT JOIN Asesoria_Dias ad ON ad.IdAsesoria = a.idAsesoria
+      LEFT JOIN Dias d ON d.idDia = ad.IdDia
+      LEFT JOIN Lugar l ON l.idLugar = a.idLugar
+      LEFT JOIN Docente dc ON dc.idDocente = a.idDocente
+      WHERE a.Estado = 'Pendiente' AND a.idDocente IS NULL
+      GROUP BY a.idAsesoria
+    `);
 
-      if (asesorias.length === 0) {
-          return res.status(404).json({ error: 'No hay asesorías activas disponibles.' });
-      }
+    const idAsesorias = asesorias.map(a => a.id_asesoria);
 
-      res.json(asesorias);
+    // 2. Obtener idMateria desde Mongo
+    const mapaIdMateria = await obtenerIdMateriasDesdeMongo(idAsesorias);
+
+    // 3. Obtener nombres de materias desde MySQL
+    const idMaterias = [...new Set(Object.values(mapaIdMateria))];
+    const [materias] = await pool.query(
+      'SELECT idMateria, Nombre FROM Materia WHERE idMateria IN (?)',
+      [idMaterias]
+    );
+
+    const mapaMaterias = Object.fromEntries(materias.map(m => [m.idMateria, m.Nombre]));
+
+    // 4. Combinar resultados
+    const resultado = asesorias.map(a => ({
+      ...a,
+      materiaNombre: mapaMaterias[mapaIdMateria[a.id_asesoria]] || 'Desconocida'
+    }));
+
+    res.json(resultado);
 
   } catch (error) {
-      console.error('Error al obtener asesorías disponibles:', error);
-      res.status(500).json({ error: 'Error al procesar las asesorías del alumno.', detalle: error.message });
+    console.error('Error al obtener asesorías:', error);
+    res.status(500).json({ error: 'Error al obtener las asesorías.', detalle: error.message });
   }
 });
-
 
 /*app.get('/asesorias/asesor/:id', async (req, res) => {
   const { id } = req.params;
