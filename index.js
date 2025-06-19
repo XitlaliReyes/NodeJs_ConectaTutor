@@ -10,7 +10,7 @@ const sgMail = require('@sendgrid/mail');
 
 //Conexion con MongoDB
 const { MongoClient } = require('mongodb');
-const uri = 'mongodb://admin:admin123@192.168.137.142:27017/conectatutor?authSource=admin';
+const uri = 'mongodb://admin:admin123@192.168.33.114:27017/conectatutor?authSource=admin';
 const mongoClient = new MongoClient(uri);
 
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
@@ -21,7 +21,7 @@ app.use(express.json());
 app.use(bodyParser.json());
 
 const dbConfig = {
-    host: '192.168.137.142',
+    host: '192.168.33.114',
     user: 'lnxarchitect',
     password: 'Practica#4',
     database: 'conectatutor',
@@ -139,8 +139,6 @@ app.get('/docentes', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-
-
 
 
 // Obtener carrera y materias
@@ -1830,7 +1828,6 @@ app.put('/cancelarasesoria', async (req, res) => {
 //       res.status(500).json({ error: 'Error al procesar las asesorías del alumno.', detalle: error.message });
 //   }
 // });
-
 
 app.get('/asesoriasPendientes', async (req, res) => {
   try {
